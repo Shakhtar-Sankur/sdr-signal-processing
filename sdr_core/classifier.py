@@ -15,7 +15,36 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+#: Number of spectrum bins the classifier feeds the model. Fixed, because a model
+#: is trained at one input width.
+FEATURE_BINS = 2048
+
+
+class DummyModel:
+    """Stand-in used when no trained model is available.
+
+    Defined at module level rather than inside `_create_dummy_model` so callers
+    can recognise it with `isinstance`. It returns plain numpy, not tensors.
+    """
+
+    def __call__(self, inputs):
+        inputs = np.asarray(inputs)
+        batch_size = inputs.shape[0]
+        num_classes = len(SignalClassifier.SIGNAL_CLASSES)
+        logits = np.random.exponential(0.5, (batch_size, num_classes))
+        logits = logits - np.min(logits, axis=1, keepdims=True)
+        total = np.sum(logits, axis=1, keepdims=True)
+        total[total == 0] = 1.0
+        return {'logits': logits, 'probabilities': logits / total}
+
 class SignalClassifier(QObject):
+    SIGNAL_CLASSES = [
+        'NOISE', 'AM', 'FM_NARROW', 'FM_WIDE', 'SSB_UPPER', 'SSB_LOWER',
+        'CW', 'FSK', 'GFSK', 'BPSK', 'QPSK', '8PSK', 'QAM16', 'QAM64',
+        'NOAA_APT', 'METEOR_M2', 'GSM', 'TETRA', 'DMR', 'ADS_B', 'ACARS',
+        'AIS', 'NAVTEX', 'LORA', 'SIGFOX', 'BLE', 'ZIGBEE'
+    ]
+
     classification_ready = pyqtSignal(list)
     model_status_changed = pyqtSignal(dict)
 
@@ -27,28 +56,26 @@ class SignalClassifier(QObject):
         self.last_classification_time = 0
         self.classification_interval = config.classification_interval
         self.classification_threshold = config.classification_threshold
-        self.signal_classes = [
-            'NOISE', 'AM', 'FM_NARROW', 'FM_WIDE', 'SSB_UPPER', 'SSB_LOWER',
-            'CW', 'FSK', 'GFSK', 'BPSK', 'QPSK', '8PSK', 'QAM16', 'QAM64',
-            'NOAA_APT', 'METEOR_M2', 'GSM', 'TETRA', 'DMR', 'ADS_B', 'ACARS',
-            'AIS', 'NAVTEX', 'LORA', 'SIGFOX', 'BLE', 'ZIGBEE'
-        ]
+        self.signal_classes = list(self.SIGNAL_CLASSES)
         self.load_model()
 
     def load_model(self) -> bool:
         if not TF_AVAILABLE:
-            logger.warning("Cannot load model: TensorFlow not available")
-            self.model_status_changed.emit({'status': 'unavailable', 'message': 'TensorFlow not available'})
+            # Fall back to the dummy rather than leaving self.model as None.
+            # With no model at all, classify_spectrum quietly returned without
+            # emitting anything: no output, no error, nothing to debug.
+            logger.warning("TensorFlow not available; using the dummy classifier")
+            self._create_dummy_model()
+            self.model_status_changed.emit(
+                {'status': 'dummy', 'message': 'TensorFlow not available; predictions are random'})
             return False
         try:
             model_path = self.config.classifier_model_path
             if not os.path.exists(model_path):
                 logger.warning(f"Model file not found: {model_path}")
                 self.model_status_changed.emit({'status': 'error', 'message': 'Model file not found'})
-                if model_path.endswith('.pb'):
-                    self._create_dummy_model()
-                    self.model_status_changed.emit({'status': 'dummy', 'message': 'Using dummy model'})
-                    return True
+                self._create_dummy_model()
+                self.model_status_changed.emit({'status': 'dummy', 'message': 'Using dummy model'})
                 return False
             self.model = tf.saved_model.load(model_path)
             logger.info(f"Model loaded from {model_path}")
@@ -62,14 +89,6 @@ class SignalClassifier(QObject):
             return False
 
     def _create_dummy_model(self):
-        class DummyModel:
-            def __call__(self, inputs):
-                batch_size = inputs.shape[0]
-                num_classes = 27
-                logits = np.random.exponential(0.5, (batch_size, num_classes))
-                logits = logits - np.min(logits, axis=1, keepdims=True)
-                probs = logits / np.sum(logits, axis=1, keepdims=True)
-                return {'logits': logits, 'probabilities': probs}
         self.model = DummyModel()
         logger.warning("Created dummy classification model")
 
@@ -84,13 +103,18 @@ class SignalClassifier(QObject):
             spectrum = spectrum_data['spectrum']
             features = self._preprocess_spectrum(spectrum)
             if self.model is not None:
-                if TF_AVAILABLE and not isinstance(self.model, type(lambda: None).__class__):
+                # `isinstance(self.model, type(lambda: None).__class__)` reduced to
+                # `isinstance(model, type)` - "is the model a class object?" - which
+                # is false for any instance. The dummy therefore went down the
+                # TensorFlow path, where `.numpy()` on its plain ndarray raised
+                # AttributeError. Ask the question directly instead.
+                if TF_AVAILABLE and not isinstance(self.model, DummyModel):
                     features_tf = tf.convert_to_tensor(features, dtype=tf.float32)
                     predictions = self.model(features_tf)
-                    probabilities = predictions['probabilities'].numpy()[0]
+                    probabilities = np.asarray(predictions['probabilities'])[0]
                 else:
                     predictions = self.model(features)
-                    probabilities = predictions['probabilities'][0]
+                    probabilities = np.asarray(predictions['probabilities'])[0]
                 classifications = self._process_classification_results(probabilities)
                 self.classification_ready.emit(classifications)
         except Exception as e:
@@ -104,9 +128,12 @@ class SignalClassifier(QObject):
         else:
             features = spectrum
         features = (features - np.mean(features)) / (np.std(features) + 1e-10)
-        if features.shape[1] != 4096 and features.shape[1] != 2048:
+        # Always resample to one width. The previous test let 4096-bin spectra
+        # through untouched while sending everything else to 2048, so the model
+        # received two different input sizes depending on the FFT setting.
+        if features.shape[1] != FEATURE_BINS:
             from scipy import signal
-            features = signal.resample(features, 2048, axis=1)
+            features = signal.resample(features, FEATURE_BINS, axis=1)
         return features
 
     def _process_classification_results(self, probabilities: np.ndarray) -> List[Dict[str, Any]]:

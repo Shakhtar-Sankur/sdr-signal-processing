@@ -30,8 +30,11 @@ class SignalRecorder(QObject):
         try:
             timestamp = datetime.now()
             timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
-            center_freq = metadata.get('center_freq', 0) if metadata else 0
-            freq_mhz = center_freq / 1e6 if center_freq else 0
+            # Fall back to the configured tuning rather than 0, so recordings are
+            # not all named 0.000MHz and indistinguishable from one another.
+            center_freq = (metadata or {}).get('center_freq') or getattr(
+                self.config, 'center_frequency', 0)
+            freq_mhz = (center_freq or 0) / 1e6
             filename = f"recording_{timestamp_str}_{freq_mhz:.3f}MHz"
             recording_path = os.path.join(self.config.recording_dir, filename)
             os.makedirs(recording_path, exist_ok=True)
