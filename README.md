@@ -67,6 +67,27 @@ frames.
 This repository is the signal-processing core. Radio hardware drivers and the desktop UI
 are not part of it.
 
+Two components degrade rather than fail when their optional dependency is missing:
+`classifier` falls back to a clearly-labelled dummy model without TensorFlow, and
+`recorder` writes NumPy archives instead of HDF5 without h5py.
+
+### Notes from a correctness pass
+
+- **The Qt application was removed.** `main.py` imported a hardware layer and six UI
+  modules that were never written, so it could not start. What remained is this library.
+- **The classifier crashed on its own fallback.** The guard distinguishing the dummy model
+  from a real one read `isinstance(self.model, type(lambda: None).__class__)`, which reduces
+  to `isinstance(model, type)` — true only for a class object, never an instance. The dummy
+  went down the TensorFlow branch, where `.numpy()` on its plain ndarray raised
+  `AttributeError`.
+- **With TensorFlow absent it produced nothing at all.** `load_model` returned early without
+  creating a model, and `classify_spectrum` then quietly returned: no output, no error.
+- **Spectra reached the model at two different widths.** 4096-bin input passed through
+  untouched while everything else was resampled to 2048, so the input size depended on the
+  FFT setting.
+- `demodulate`, `demodulate_bits` and `spectrum` were added because the only existing path
+  was a queue-and-Qt-signal loop that cannot be called from a script or a test.
+
 ## Licence
 
 All rights reserved. Published for reading, not for reuse.
