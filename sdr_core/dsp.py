@@ -240,3 +240,60 @@ class SignalProcessor(QObject):
             'filter_bw': self.current_filter_bw,
             'decimation': self.current_decimation
         })
+    # ------------------------------------------------------------------
+    # Public, synchronous API.
+    #
+    # The queue/thread path above is how a live radio feeds this class: samples
+    # arrive, results leave as Qt signals. That is awkward to call directly, so
+    # these two methods expose the same maths as ordinary function calls.
+    # ------------------------------------------------------------------
+
+    def demodulate(self, samples: np.ndarray, sample_rate: float,
+                   modulation: Optional[ModulationType] = None) -> np.ndarray:
+        """Demodulate a block of complex IQ samples and return the baseband result.
+
+        `modulation` defaults to whatever the processor is currently configured
+        for. FSK returns the demodulated waveform; use `demodulate_bits` for the
+        recovered bitstream.
+        """
+        mode = modulation if modulation is not None else self.current_modulation
+
+        if mode == ModulationType.AM:
+            return self._demodulate_am(samples, sample_rate)
+        if mode == ModulationType.FM_NARROW:
+            return self._demodulate_fm(samples, sample_rate, deviation=5000)
+        if mode == ModulationType.FM_WIDE:
+            return self._demodulate_fm(samples, sample_rate, deviation=75000)
+        if mode == ModulationType.SSB_UPPER:
+            return self._demodulate_ssb(samples, sample_rate, upper=True)
+        if mode == ModulationType.SSB_LOWER:
+            return self._demodulate_ssb(samples, sample_rate, upper=False)
+        if mode in (ModulationType.FSK, ModulationType.GFSK):
+            waveform, _bits = self._demodulate_fsk(samples, sample_rate)
+            return waveform
+        if mode in (ModulationType.BPSK, ModulationType.QPSK, ModulationType.PSK8):
+            symbols, _constellation = self._demodulate_psk(samples, sample_rate, mode)
+            return symbols
+
+        logger.warning("No demodulator for %s; returning samples unchanged", mode.name)
+        return samples
+
+    def demodulate_bits(self, samples: np.ndarray, sample_rate: float) -> np.ndarray:
+        """Recover a hard-decision bitstream from an FSK-modulated block."""
+        _waveform, bits = self._demodulate_fsk(samples, sample_rate)
+        return bits
+
+    def spectrum(self, samples: np.ndarray) -> np.ndarray:
+        """Averaged power spectrum in dB, using the configured FFT size and window."""
+        block = samples[: self.fft_size]
+        if len(block) < self.fft_size:
+            block = np.pad(block, (0, self.fft_size - len(block)))
+        windowed = block * self.window
+        spectrum = np.fft.fftshift(np.fft.fft(windowed))
+        power_db = 20 * np.log10(np.abs(spectrum) + 1e-12)
+
+        if self.last_spectrum is not None and len(self.last_spectrum) == len(power_db):
+            a = self.spectrum_averaging
+            power_db = a * self.last_spectrum + (1 - a) * power_db
+        self.last_spectrum = power_db
+        return power_db
