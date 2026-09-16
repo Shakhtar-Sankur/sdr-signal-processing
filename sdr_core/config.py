@@ -29,13 +29,19 @@ class AppConfig:
         self.recording_dir = str(Path.home() / "SDR_Recordings")
         self.recording_format = "hdf5"
         self.recording_compression = "lzf"
+        # Only the decoders that exist. This list named sixteen, thirteen of
+        # which were never written: selecting one returned None, and the
+        # "auto-select a decoder for this signal" path pointed at ids with
+        # nothing behind them. A configuration that advertises what is not
+        # there is a bug report waiting to be filed by a confused user.
+        #
+        # The other thirteen — meteor_m2, gsm, tetra, acars, ais, navtex, lora,
+        # sigfox, ble, zigbee, noaa, inmarsat, iridium — are the roadmap, and
+        # belong here as each one is implemented.
         self.enabled_decoders = [
-            "weather.noaa_apt", "weather.meteor_m2",
-            "telecom.gsm", "telecom.tetra", "telecom.dmr",
-            "aviation.ads_b", "aviation.acars",
-            "maritime.ais", "maritime.navtex",
-            "iot.lora", "iot.sigfox", "iot.ble", "iot.zigbee",
-            "satellite.noaa", "satellite.inmarsat", "satellite.iridium"
+            "weather.noaa_apt",
+            "telecom.dmr",
+            "aviation.ads_b",
         ]
         self.classifier_model_path = "models/signal_classifier_v2.3.pb"
         self.classification_threshold = 0.65

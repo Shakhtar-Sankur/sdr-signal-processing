@@ -3,7 +3,7 @@ import numpy as np
 from typing import Optional, Dict, Any, List, Tuple
 import threading
 import importlib
-from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
+from ._qt import QObject, pyqtSignal, pyqtSlot
 import sys
 import os
 import json

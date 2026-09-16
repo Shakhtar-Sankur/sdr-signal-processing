@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # Core only. PyQt6 and TensorFlow are optional here by design — the
+      # library runs without them, and installing a GUI toolkit on a headless
+      # runner to prove that would defeat the point.
+      - run: pip install numpy scipy h5py pytest
+
+      - name: The library imports with no GUI toolkit installed
+        run: |
+          python -c "import PyQt6" 2>/dev/null && { echo 'PyQt6 present - this job is meant to run without it'; exit 1; } || true
+          python -c "from sdr_core import AppConfig, ModulationType, SignalProcessor; SignalProcessor(AppConfig()); print('ok')"
+
+      - run: pytest -q

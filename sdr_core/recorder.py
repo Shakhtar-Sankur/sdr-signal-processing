@@ -5,7 +5,7 @@ import threading
 import time
 import os
 from datetime import datetime
-from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
+from ._qt import QObject, pyqtSignal, pyqtSlot
 import json
 
 logger = logging.getLogger(__name__)
