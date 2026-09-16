@@ -1,5 +1,11 @@
-PyQt6>=6.5.0
+# The library itself.
 numpy>=1.24.0
 scipy>=1.11.0
 h5py>=3.9.0
-tensorflow>=2.13.0
+
+# Optional, and deliberately not required:
+#   PyQt6>=6.5.0        signals/slots when you embed this in a Qt application.
+#                       Without it sdr_core uses the plain-Python equivalents
+#                       in sdr_core/_qt.py and behaves the same.
+#   tensorflow>=2.13.0  the trained signal classifier. Without it the
+#                       classifier falls back to its dummy model and says so.

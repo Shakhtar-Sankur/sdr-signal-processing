@@ -3,7 +3,7 @@ import numpy as np
 from typing import Optional, Dict, Any, List, Tuple
 import threading
 import time
-from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
+from ._qt import QObject, pyqtSignal, pyqtSlot
 import os
 
 try:

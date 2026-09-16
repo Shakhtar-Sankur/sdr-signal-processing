@@ -71,6 +71,25 @@ Two components degrade rather than fail when their optional dependency is missin
 `classifier` falls back to a clearly-labelled dummy model without TensorFlow, and
 `recorder` writes NumPy archives instead of HDF5 without h5py.
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+22 tests, and they check signal maths rather than that a function returned
+something: a tone modulated onto a carrier has to come back out of the
+demodulator at the frequency it went in at, an FM offset of f Hz at deviation d
+has to read f/d, alternating FSK symbols have to produce alternating bits, and
+the spectrum has to peak in the right bin. Config round-trips through a file,
+the classifier resamples every FFT size to one width, and every decoder the
+config enables has to exist.
+
+Run on Python 3.10 and 3.12 by [GitHub Actions](.github/workflows/tests.yml),
+without PyQt6 or TensorFlow installed — which is also what proves the library
+needs neither.
+
 ### Notes from a correctness pass
 
 - **The Qt application was removed.** `main.py` imported a hardware layer and six UI

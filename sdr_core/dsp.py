@@ -3,7 +3,7 @@ import numpy as np
 from typing import Optional, Dict, Any, Tuple, List
 from enum import Enum
 from scipy import signal
-from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
+from ._qt import QObject, pyqtSignal, pyqtSlot
 import threading
 import queue
 
